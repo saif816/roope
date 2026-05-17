@@ -26,50 +26,139 @@ warnings.filterwarnings('ignore', category=FutureWarning, module='insightface')
 warnings.filterwarnings('ignore', category=UserWarning, module='torchvision')
 
 
+"""
+roop/core.py  —  PATCH SECTION
+Copy the block below and paste it inside the  parse_args()  function
+of your existing  roop/core.py,  right after the last
+`parser.add_argument(...)` call and before `return parser.parse_args()`.
+
+If your project uses run.py to define args instead of roop/core.py,
+paste the same block there.
+"""
+
+# ── Paste this block into parse_args() ──────────────────────────────────────
+
+
 def parse_args() -> None:
+    """
+    Extend the existing argument parser in roop/core.py with new mask flags.
+    Add the lines marked NEW below your existing parser.add_argument() calls.
+    """
     signal.signal(signal.SIGINT, lambda signal_number, frame: destroy())
-    program = argparse.ArgumentParser(formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=100))
-    program.add_argument('-s', '--source', help='select an source image', dest='source_path')
-    program.add_argument('-t', '--target', help='select an target image or video', dest='target_path')
-    program.add_argument('-o', '--output', help='select output file or directory', dest='output_path')
-    program.add_argument('--frame-processor', help='frame processors (choices: face_swapper, face_enhancer, ...)', dest='frame_processor', default=['face_swapper'], nargs='+')
-    program.add_argument('--keep-fps', help='keep target fps', dest='keep_fps', action='store_true')
-    program.add_argument('--keep-frames', help='keep temporary frames', dest='keep_frames', action='store_true')
-    program.add_argument('--skip-audio', help='skip target audio', dest='skip_audio', action='store_true')
-    program.add_argument('--many-faces', help='process every face', dest='many_faces', action='store_true')
-    program.add_argument('--reference-face-position', help='position of the reference face', dest='reference_face_position', type=int, default=0)
-    program.add_argument('--reference-frame-number', help='number of the reference frame', dest='reference_frame_number', type=int, default=0)
-    program.add_argument('--similar-face-distance', help='face distance used for recognition', dest='similar_face_distance', type=float, default=0.85)
-    program.add_argument('--temp-frame-format', help='image format used for frame extraction', dest='temp_frame_format', default='png', choices=['jpg', 'png'])
-    program.add_argument('--temp-frame-quality', help='image quality used for frame extraction', dest='temp_frame_quality', type=int, default=0, choices=range(101), metavar='[0-100]')
-    program.add_argument('--output-video-encoder', help='encoder used for the output video', dest='output_video_encoder', default='libx264', choices=['libx264', 'libx265', 'libvpx-vp9', 'h264_nvenc', 'hevc_nvenc'])
-    program.add_argument('--output-video-quality', help='quality used for the output video', dest='output_video_quality', type=int, default=35, choices=range(101), metavar='[0-100]')
-    program.add_argument('--max-memory', help='maximum amount of RAM in GB', dest='max_memory', type=int)
-    program.add_argument('--execution-provider', help='available execution provider (choices: cpu, ...)', dest='execution_provider', default=['cpu'], choices=suggest_execution_providers(), nargs='+')
-    program.add_argument('--execution-threads', help='number of execution threads', dest='execution_threads', type=int, default=suggest_execution_threads())
-    program.add_argument('-v', '--version', action='version', version=f'{roop.metadata.name} {roop.metadata.version}')
+    program = argparse.ArgumentParser()
+
+    # ── existing args (keep yours, shown abbreviated) ────────────────────────
+    program.add_argument('-s', '--source',     dest='source_path')
+    program.add_argument('-t', '--target',     dest='target_path')
+    program.add_argument('-o', '--output',     dest='output_path')
+    program.add_argument('--frame-processor',  dest='frame_processors', nargs='+')
+    program.add_argument('--keep-fps',         dest='keep_fps',    action='store_true')
+    program.add_argument('--keep-frames',      dest='keep_frames', action='store_true')
+    program.add_argument('--skip-audio',       dest='skip_audio',  action='store_true')
+    program.add_argument('--many-faces',       dest='many_faces',  action='store_true')
+    program.add_argument('--reference-face-position', dest='reference_face_position', type=int, default=0)
+    program.add_argument('--reference-frame-number',  dest='reference_frame_number',  type=int, default=0)
+    program.add_argument('--similar-face-distance',   dest='similar_face_distance',   type=float, default=0.85)
+    program.add_argument('--temp-frame-format',       dest='temp_frame_format',       default='png')
+    program.add_argument('--temp-frame-quality',      dest='temp_frame_quality',      type=int, default=0)
+    program.add_argument('--output-video-encoder',    dest='output_video_encoder',    default='libx264')
+    program.add_argument('--output-video-quality',    dest='output_video_quality',    type=int, default=35)
+    program.add_argument('--max-memory',              dest='max_memory',              type=int)
+    program.add_argument('--execution-provider',      dest='execution_providers',     nargs='+')
+    program.add_argument('--execution-threads',       dest='execution_threads',       type=int, default=4)
+    program.add_argument('--headless',                dest='headless',                action='store_true')
+    program.add_argument('--log-level',               dest='log_level',               default='error')
+
+    # ── NEW: face-mask arguments ─────────────────────────────────────────────
+    program.add_argument(
+        '--face-mask-type',
+        dest='face_mask_type',
+        choices=['box', 'occlusion', 'region'],
+        default='box',
+        help='Mask type applied after face swap. '
+             'box=simple bbox, occlusion=GrabCut (preserves glasses/hands), '
+             'region=BiSeNet parser (swap only selected facial parts).',
+    )
+    program.add_argument(
+        '--face-mask-blur',
+        dest='face_mask_blur',
+        type=float,
+        default=0.3,
+        help='Blur amount for box mask edges (0.0=sharp, 1.0=very soft).',
+    )
+    program.add_argument(
+        '--face-mask-padding',
+        dest='face_mask_padding',
+        default='0 0 0 0',
+        help='Box mask padding as "top right bottom left" in pixels.',
+    )
+    program.add_argument(
+        '--face-mask-regions',
+        dest='face_mask_regions',
+        nargs='+',
+        default=None,
+        help='Facial regions to include when --face-mask-type region is used. '
+             'Choices: skin left-eyebrow right-eyebrow left-eye right-eye '
+             'glasses nose mouth upper-lip lower-lip',
+    )
+    program.add_argument(
+        '--use-yolo-face-detector',
+        dest='use_yolo_face_detector',
+        action='store_true',
+        default=False,
+        help='Enable YOLOv8-face as a fast face pre-filter (requires ultralytics).',
+    )
+    # ── end new arguments ─────────────────────────────────────────────────────
 
     args = program.parse_args()
 
-    roop.globals.source_path = args.source_path
-    roop.globals.target_path = args.target_path
-    roop.globals.output_path = normalize_output_path(roop.globals.source_path, roop.globals.target_path, args.output_path)
-    roop.globals.headless = roop.globals.source_path is not None and roop.globals.target_path is not None and roop.globals.output_path is not None
-    roop.globals.frame_processors = args.frame_processor
-    roop.globals.keep_fps = args.keep_fps
-    roop.globals.keep_frames = args.keep_frames
-    roop.globals.skip_audio = args.skip_audio
-    roop.globals.many_faces = args.many_faces
-    roop.globals.reference_face_position = args.reference_face_position
-    roop.globals.reference_frame_number = args.reference_frame_number
-    roop.globals.similar_face_distance = args.similar_face_distance
-    roop.globals.temp_frame_format = args.temp_frame_format
-    roop.globals.temp_frame_quality = args.temp_frame_quality
-    roop.globals.output_video_encoder = args.output_video_encoder
-    roop.globals.output_video_quality = args.output_video_quality
-    roop.globals.max_memory = args.max_memory
-    roop.globals.execution_providers = decode_execution_providers(args.execution_provider)
-    roop.globals.execution_threads = args.execution_threads
+    # Map parsed args into roop.globals  (existing + new)
+    roop.globals.source_path              = args.source_path
+    roop.globals.target_path              = args.target_path
+    roop.globals.output_path              = args.output_path
+    roop.globals.headless                 = args.headless
+    roop.globals.frame_processors         = args.frame_processors
+    roop.globals.keep_fps                 = args.keep_fps
+    roop.globals.keep_frames              = args.keep_frames
+    roop.globals.skip_audio               = args.skip_audio
+    roop.globals.many_faces               = args.many_faces
+    roop.globals.reference_face_position  = args.reference_face_position
+    roop.globals.reference_frame_number   = args.reference_frame_number
+    roop.globals.similar_face_distance    = args.similar_face_distance
+    roop.globals.temp_frame_format        = args.temp_frame_format
+    roop.globals.temp_frame_quality       = args.temp_frame_quality
+    roop.globals.output_video_encoder     = args.output_video_encoder
+    roop.globals.output_video_quality     = args.output_video_quality
+    roop.globals.max_memory               = args.max_memory
+    roop.globals.execution_providers      = decode_execution_providers(args.execution_providers)
+    roop.globals.execution_threads        = args.execution_threads
+    roop.globals.log_level                = args.log_level
+
+    # ── NEW globals ──────────────────────────────────────────────────────────
+    roop.globals.face_mask_type           = args.face_mask_type
+
+    roop.globals.face_mask_blur           = max(0.0, min(1.0, args.face_mask_blur))
+
+    # Parse padding string "top right bottom left" → tuple of ints
+    try:
+        parts = [int(x) for x in args.face_mask_padding.split()]
+        if len(parts) == 1:
+            parts = parts * 4
+        elif len(parts) == 2:
+            parts = [parts[0], parts[1], parts[0], parts[1]]
+        elif len(parts) != 4:
+            parts = [0, 0, 0, 0]
+    except (ValueError, AttributeError):
+        parts = [0, 0, 0, 0]
+    roop.globals.face_mask_padding        = tuple(parts)
+
+    roop.globals.face_mask_regions        = args.face_mask_regions or [
+        "skin", "left-eyebrow", "right-eyebrow", "left-eye", "right-eye",
+        "nose", "mouth", "upper-lip", "lower-lip",
+    ]
+
+    roop.globals.use_yolo_face_detector   = args.use_yolo_face_detector
+    # ── end new globals ───────────────────────────────────────────────────────
 
 
 def encode_execution_providers(execution_providers: List[str]) -> List[str]:
