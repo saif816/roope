@@ -1,7 +1,9 @@
 """
 roop/globals.py
-Drop this file into:  roop/globals.py  (inside the repo, next to roop/core.py)
+Mask settings are read from environment variables set by handler.py.
+This means handler.py controls them without any CLI flag changes.
 """
+import os
 from typing import List, Optional
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -32,36 +34,31 @@ temp_frame_quality:   int = 0
 output_video_encoder: str = 'libx264'
 output_video_quality: int = 35
 
-# ── Face mask settings (NEW) ──────────────────────────────────────────────────
-# face_mask_type   : which masking strategy to use after inswapper runs
-#   "box"       – bounding-box rectangle, blurred at edges  (original roop behaviour)
-#   "occlusion" – GrabCut foreground mask; glasses/hands are NOT overwritten
-#   "region"    – BiSeNet parser; only the selected facial sub-regions are swapped
-face_mask_type: str = 'box'
+# ── Face mask settings — read from env vars set by handler.py ─────────────────
+# handler.py sets: ROOP_FACE_MASK_TYPE, ROOP_FACE_MASK_BLUR,
+#                  ROOP_FACE_MASK_PADDING, ROOP_FACE_MASK_REGIONS,
+#                  ROOP_USE_YOLO_FACE_DETECTOR
 
-# Gaussian blur factor applied to the edges of the box mask (0.0 – 1.0)
-face_mask_blur: float = 0.3
+face_mask_type: str = os.environ.get('ROOP_FACE_MASK_TYPE', 'box')
 
-# Extra pixels to expand the box mask outward: (top, right, bottom, left)
-face_mask_padding: tuple = (0, 0, 0, 0)
+face_mask_blur: float = float(os.environ.get('ROOP_FACE_MASK_BLUR', '0.3'))
 
-# Facial sub-regions active when face_mask_type == "region"
-# Remove a name to exclude that region from being swapped
-# (e.g. remove "glasses" to leave glasses on the original face)
-face_mask_regions: List[str] = [
-    'skin',
-    'left-eyebrow',
-    'right-eyebrow',
-    'left-eye',
-    'right-eye',
-    'nose',
-    'mouth',
-    'upper-lip',
-    'lower-lip',
-]
+# ROOP_FACE_MASK_PADDING is "top,right,bottom,left" e.g. "5,5,5,5"
+_pad_str = os.environ.get('ROOP_FACE_MASK_PADDING', '0,0,0,0')
+try:
+    _pad_parts = [int(x) for x in _pad_str.split(',')]
+    face_mask_padding: tuple = tuple(_pad_parts) if len(_pad_parts) == 4 else (0, 0, 0, 0)
+except (ValueError, AttributeError):
+    face_mask_padding = (0, 0, 0, 0)
 
-# ── YOLO face detector (NEW) ──────────────────────────────────────────────────
-# Set True to use YOLOv8-face as a fast pre-filter before the InsightFace pass.
-# Requires:  pip install ultralytics
-#            models/yolov8n-face.pt  (auto-downloaded by handler when enabled)
-use_yolo_face_detector: bool = False
+# ROOP_FACE_MASK_REGIONS is comma-separated e.g. "skin,nose,mouth"
+_regions_str = os.environ.get('ROOP_FACE_MASK_REGIONS', '')
+face_mask_regions: List[str] = (
+    [r.strip() for r in _regions_str.split(',') if r.strip()]
+    if _regions_str
+    else ['skin', 'left-eyebrow', 'right-eyebrow', 'left-eye', 'right-eye',
+          'nose', 'mouth', 'upper-lip', 'lower-lip']
+)
+
+# ROOP_USE_YOLO_FACE_DETECTOR is "1" or "0"
+use_yolo_face_detector: bool = os.environ.get('ROOP_USE_YOLO_FACE_DETECTOR', '0') == '1'
