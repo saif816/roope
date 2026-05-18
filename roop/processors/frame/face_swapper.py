@@ -29,6 +29,7 @@ Dependencies (pip install):
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
@@ -436,17 +437,13 @@ def process_video(source_path: str, temp_frame_paths: List[str]) -> None:
 # ---------------------------------------------------------------------------
 
 def pre_check() -> bool:
-    download_dir = resolve_relative_path("../models")
-    conditional_download(
-        download_dir,
-        ["https://huggingface.co/CountFloyd/deepfake/resolve/main/inswapper_128.onnx"],
-    )
-    if use_yolo_detector():
-        # Community YOLOv8-face weight (MIT-licensed)
-        conditional_download(
-            download_dir,
-            ["https://huggingface.co/arnabdhar/YOLOv8-Face-Detection/resolve/main/model.pt"],
-        )
+    # Models are pre-downloaded by handler.py onto the volume and symlinked.
+    # Do NOT call conditional_download here — it re-downloads 529MB on every job.
+    # Just verify the model file exists at the resolved path.
+    model_path = resolve_relative_path("../models/inswapper_128.onnx")
+    if not os.path.exists(model_path):
+        update_status(f"inswapper model not found at {model_path}", NAME)
+        return False
     return True
 
 
